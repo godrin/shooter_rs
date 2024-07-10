@@ -63,7 +63,7 @@ fn setupv3(
 ) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn((MaterialMesh2dBundle {
-        mesh: meshes.add(create_mesh(create_debris())).into(),
+        mesh: meshes.add(create_mesh(create_ship())).into(),
         transform: Transform::default().with_scale(Vec3::splat(16.)),
         material: materials.add(ColorMaterial::from(Color::PURPLE)),
         ..Default::default()
