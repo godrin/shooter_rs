@@ -64,10 +64,10 @@ fn create_debris() -> Vec<Vec3> {
 
 fn create_shot() -> Vec<Vec3> {
     vec![
-        Vec3::new(0.0, 0.7, 0.0), 
-        Vec3::new(0.3, 0., 0.0), 
-        Vec3::new(0.0, -0.3, 0.0),
-        Vec3::new(-0.3,0.,0.)
+        Vec3::new(0.0, 0.4, 0.0), 
+        Vec3::new(0.1, 0., 0.0), 
+        Vec3::new(0.0, -0.1, 0.0),
+        Vec3::new(-0.1,0.,0.)
     ]
 }
 
@@ -183,6 +183,7 @@ fn input_handler(
                 commands.spawn((MaterialMesh2dBundle {
                     mesh: mesh_handles.shot.clone().into(),
                     transform: Transform::default().with_scale(Vec3::splat(16.))
+                        .with_rotation(transform.rotation)
                         .with_translation(transform.translation),
                         material: mesh_handles.material.clone(),
                         ..Default::default()
