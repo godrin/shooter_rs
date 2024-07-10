@@ -25,14 +25,24 @@ struct Speed {
     speed: Vec2
 }
 
-fn create_triangle() -> Mesh {
+fn create_ship() -> Vec<Vec3>  {
+    vec![
+        Vec3::new(0.0, 1.0, 0.0), 
+        Vec3::new(0.6, -0.3, 0.0), 
+        Vec3::new(0.0, -0.1, 0.0),
+        Vec3::new(-0.6,-0.3,0.)
+    ]
+}
+
+fn create_mesh(lines: Vec<Vec3>) -> Mesh {
+
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            vec![[0.0, 1.0, 0.0], [0.6, -0.3, 0.0], [0.0, -0.1, 0.0], [-0.6,-0.3,0.]]
+            lines
         )
         .with_inserted_attribute(
-            Mesh::ATTRIBUTE_COLOR, vec![[1.0, 0.0, 0.0, 1.0]; 4])
+            Mesh::ATTRIBUTE_COLOR, vec![[1.0, 1.0, 1.0, 1.0]; 4])
         .with_inserted_indices(
             Indices::U32(vec![0, 1, 2, 3, 0]))
 }
@@ -44,7 +54,7 @@ fn setupv3(
 ) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn((MaterialMesh2dBundle {
-        mesh: meshes.add(create_triangle()).into(),
+        mesh: meshes.add(create_mesh(create_ship())).into(),
         transform: Transform::default().with_scale(Vec3::splat(16.)),
         material: materials.add(ColorMaterial::from(Color::PURPLE)),
         ..Default::default()
@@ -54,11 +64,13 @@ fn setupv3(
     ));
 }
 
+// FIXME: add time
 fn move_speeder(
-    mut query: Query<(&Speed, &mut Transform), With<Ship>>
+    mut query: Query<(&Speed, &mut Transform), With<Ship>>,
+    time: Res<Time>,
 ) {
   for (speed, mut transform) in &mut query {
-      transform.translation+=speed.speed.extend(0.);
+      transform.translation+=speed.speed.extend(0.) * time.delta_seconds();
   }
 }
 
@@ -66,12 +78,13 @@ fn input_handler(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<(&mut Speed, &mut Transform), With<Ship>>,
     time: Res<Time>,
+     mut app_exit_events: ResMut<Events<bevy::app::AppExit>>
 ) {
     if keyboard_input.pressed(KeyCode::ArrowUp) {
         for (mut speed, transform) in &mut query {
             let r = transform.rotation.to_euler(EulerRot::XYZ);
             let v = Vec2::from_angle(r.2+3.1415/2.);
-            speed.speed+=v*0.01;
+            speed.speed+=v*100. * time.delta_seconds();
         }
     }
     if keyboard_input.pressed(KeyCode::ArrowLeft) {
@@ -83,6 +96,10 @@ fn input_handler(
         for (_speed, mut transform) in &mut query {
             transform.rotate_z(-time.delta_seconds() *5.);
         }
+    }
+
+    if keyboard_input.pressed(KeyCode::KeyQ) {
+        app_exit_events.send(bevy::app::AppExit);
     }
 }
 
