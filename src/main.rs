@@ -87,15 +87,19 @@ fn create_shot() -> Vec<Vec3> {
 }
 
 fn create_mesh(lines: Vec<Vec3>) -> Mesh {
+    let len = lines.len();
+    let mut indexes:Vec<u32> = (0..(len as u32)).collect();
+    indexes.push(0);
+ /* //![0, 1, 2, 3, 0])) */
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
             lines
         )
         .with_inserted_attribute(
-            Mesh::ATTRIBUTE_COLOR, vec![[1.0, 1.0, 1.0, 1.0]; 4])
+            Mesh::ATTRIBUTE_COLOR, vec![[1.0, 1.0, 1.0, 1.0]; len])
         .with_inserted_indices(
-            Indices::U32(vec![0, 1, 2, 3, 0]))
+            Indices::U32(indexes))
 }
 
 #[derive(Resource)]
@@ -135,7 +139,7 @@ fn setupv3(
     ));
     commands.spawn((MaterialMesh2dBundle {
         mesh: mesh_handles.fighter.clone().into(),
-        transform: Transform::default().with_scale(Vec3::splat(16.)),
+        transform: Transform::default().with_scale(Vec3::splat(32.)),
         material: mesh_handles.material.clone(),
         ..Default::default()
     },
