@@ -53,6 +53,21 @@ fn create_ship() -> Vec<Vec3>  {
     ]
 }
 
+fn create_figter() -> Vec<Vec3>  {
+    vec![
+        Vec3::new(0.1, 0.1, 0.0), 
+        Vec3::new(-0.1, -0.2, 0.0),
+        Vec3::new(-0.2, 0.2, 0.0),
+        Vec3::new(-0.25, -0.3, 0.0),
+        Vec3::new(0., -0.2, 0.0),
+
+        Vec3::new(0.25, -0.3, 0.0),
+        Vec3::new(0.2, 0.2, 0.0),
+        Vec3::new(0.1, -0.2, 0.0),
+        Vec3::new(-0.1, 0.1, 0.0), 
+    ]
+}
+
 fn create_debris() -> Vec<Vec3> {
     vec![
         Vec3::new(0.0, 0.3, 0.0), 
@@ -86,6 +101,7 @@ fn create_mesh(lines: Vec<Vec3>) -> Mesh {
 #[derive(Resource)]
 struct MeshHandles {
     ship: Handle<Mesh>,
+    fighter: Handle<Mesh>,
     debris: Handle<Mesh>,
     shot: Handle<Mesh>,
     material: Handle<ColorMaterial>
@@ -99,6 +115,7 @@ fn setupv3(
 ) {
     let mesh_handles=MeshHandles {
         ship : meshes.add(create_mesh(create_ship())),
+        fighter : meshes.add(create_mesh(create_figter())),
         debris : meshes.add(create_mesh(create_debris())),
         shot : meshes.add(create_mesh(create_shot())),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
@@ -117,7 +134,7 @@ fn setupv3(
     Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.spawn((MaterialMesh2dBundle {
-        mesh: mesh_handles.debris.clone().into(),
+        mesh: mesh_handles.fighter.clone().into(),
         transform: Transform::default().with_scale(Vec3::splat(16.)),
         material: mesh_handles.material.clone(),
         ..Default::default()
