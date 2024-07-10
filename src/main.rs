@@ -34,6 +34,15 @@ fn create_ship() -> Vec<Vec3>  {
     ]
 }
 
+fn create_debris() -> Vec<Vec3> {
+    vec![
+        Vec3::new(0.0, 0.3, 0.0), 
+        Vec3::new(0.3, 0., 0.0), 
+        Vec3::new(0.0, -0.3, 0.0),
+        Vec3::new(-0.3,0.,0.)
+    ]
+}
+
 fn create_mesh(lines: Vec<Vec3>) -> Mesh {
 
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
@@ -54,7 +63,7 @@ fn setupv3(
 ) {
     commands.spawn(Camera2dBundle::default());
     commands.spawn((MaterialMesh2dBundle {
-        mesh: meshes.add(create_mesh(create_ship())).into(),
+        mesh: meshes.add(create_mesh(create_debris())).into(),
         transform: Transform::default().with_scale(Vec3::splat(16.)),
         material: materials.add(ColorMaterial::from(Color::PURPLE)),
         ..Default::default()
