@@ -30,6 +30,11 @@ struct Thruster {
 }
 
 #[derive(Component)]
+struct Gun {
+    time: f32
+}
+
+#[derive(Component)]
 struct Speed {
     speed: Vec2,
 }
@@ -57,8 +62,16 @@ fn create_debris() -> Vec<Vec3> {
     ]
 }
 
-fn create_mesh(lines: Vec<Vec3>) -> Mesh {
+fn create_shot() -> Vec<Vec3> {
+    vec![
+        Vec3::new(0.0, 0.7, 0.0), 
+        Vec3::new(0.3, 0., 0.0), 
+        Vec3::new(0.0, -0.3, 0.0),
+        Vec3::new(-0.3,0.,0.)
+    ]
+}
 
+fn create_mesh(lines: Vec<Vec3>) -> Mesh {
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
@@ -74,6 +87,7 @@ fn create_mesh(lines: Vec<Vec3>) -> Mesh {
 struct MeshHandles {
     ship: Handle<Mesh>,
     debris: Handle<Mesh>,
+    shot: Handle<Mesh>,
     material: Handle<ColorMaterial>
 
 }
@@ -86,6 +100,7 @@ fn setupv3(
     let mesh_handles=MeshHandles {
         ship : meshes.add(create_mesh(create_ship())),
         debris : meshes.add(create_mesh(create_debris())),
+        shot : meshes.add(create_mesh(create_shot())),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
     };
 
@@ -98,6 +113,7 @@ fn setupv3(
     },
     Ship,
     Thruster{thruster_time:0.},
+    Gun{time:0.},
     Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.spawn((MaterialMesh2dBundle {
@@ -108,6 +124,7 @@ fn setupv3(
     },
     Ship,
     Thruster{thruster_time:0.},
+    Gun{time:0.},
     Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.insert_resource(mesh_handles);
@@ -138,17 +155,49 @@ fn kill_debris(
 const THRUSTER_TIME:f32 = 0.05;
 const THRUSTER_LIFETIME:f32 = 0.5;
 const THRUSTER_SPEED:f32 = 200.;
+const GUN_TIME:f32 = 0.05;
+const GUN_LIFETIME:f32 = 0.5;
+const SHOT_SPEED:f32 = 400.;
 
 fn input_handler(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Speed, &mut Transform, &mut Thruster), With<Ship>>,
+    mut query: Query<(&mut Speed, &mut Transform, &mut Thruster, &mut Gun), With<Ship>>,
     time: Res<Time>,
     mut app_exit_events: ResMut<Events<bevy::app::AppExit>>,
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>
 ) {
+    if keyboard_input.pressed(KeyCode::Space) {
+        for (speed, transform, _, mut gun) in &mut query {
+            let r = transform.rotation.to_euler(EulerRot::XYZ);
+           
+            let rnd = rand::random::<f32>()*0.3-0.15;
+            let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
+
+            // speed_up
+            gun.time+=time.delta_seconds();
+            if gun.time > GUN_TIME {
+
+                gun.time -= GUN_TIME;
+
+                commands.spawn((MaterialMesh2dBundle {
+                    mesh: mesh_handles.shot.clone().into(),
+                    transform: Transform::default().with_scale(Vec3::splat(16.))
+                        .with_translation(transform.translation),
+                        material: mesh_handles.material.clone(),
+                        ..Default::default()
+                },
+                Debris{},
+                Speed{speed:speed.speed+v* SHOT_SPEED },
+                Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
+                ));
+
+            }
+
+        }
+    }
     if keyboard_input.pressed(KeyCode::ArrowUp) {
-        for (mut speed, transform, mut thruster) in &mut query {
+        for (mut speed, transform, mut thruster, _) in &mut query {
             let r = transform.rotation.to_euler(EulerRot::XYZ);
            
             let rnd = rand::random::<f32>()*0.3-0.15;
@@ -178,12 +227,12 @@ fn input_handler(
         }
     }
     if keyboard_input.pressed(KeyCode::ArrowLeft) {
-        for (_speed, mut transform, _) in &mut query {
+        for (_speed, mut transform, _, _) in &mut query {
             transform.rotate_z(time.delta_seconds() *5.);
         }
     }
     if keyboard_input.pressed(KeyCode::ArrowRight) {
-        for (_speed, mut transform, _) in &mut query {
+        for (_speed, mut transform, _, _) in &mut query {
             transform.rotate_z(-time.delta_seconds() *5.);
         }
     }
