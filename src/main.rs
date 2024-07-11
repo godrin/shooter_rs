@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
 
 use bevy::prelude::*;
 use bevy::sprite::{MaterialMesh2dBundle, Mesh2dHandle};
@@ -11,6 +12,8 @@ use bevy::render::{
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .add_plugins(RapierDebugRenderPlugin::default())
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
         .add_systems(Update, move_speeder)
@@ -22,7 +25,9 @@ fn main() {
 struct Debris;
 
 #[derive(Component)]
-struct Ship;
+struct Ship {
+    player: u8
+}
 
 #[derive(Component)]
 struct Thruster {
@@ -90,7 +95,7 @@ fn create_mesh(lines: Vec<Vec3>) -> Mesh {
     let len = lines.len();
     let mut indexes:Vec<u32> = (0..(len as u32)).collect();
     indexes.push(0);
- /* //![0, 1, 2, 3, 0])) */
+    /* //![0, 1, 2, 3, 0])) */
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
@@ -132,7 +137,8 @@ fn setupv3(
         material: mesh_handles.material.clone(),
         ..Default::default()
     },
-    Ship,
+    Collider::ball(1.0),
+    Ship { player:0 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
     Speed{speed:Vec2::new(0., 0.) }
@@ -143,7 +149,8 @@ fn setupv3(
         material: mesh_handles.material.clone(),
         ..Default::default()
     },
-    Ship,
+    Collider::ball(1.0),
+    Ship { player:1 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
     Speed{speed:Vec2::new(0., 0.) }
@@ -180,85 +187,108 @@ const GUN_TIME:f32 = 0.05;
 const GUN_LIFETIME:f32 = 0.5;
 const SHOT_SPEED:f32 = 400.;
 
+#[derive(Clone)]
+struct KeyConfig {
+    thrust: KeyCode,
+    left: KeyCode,
+    right: KeyCode,
+    shoot: KeyCode,
+    player: u8
+}
+
+fn steering_config() -> Vec<KeyConfig> {
+    vec![
+        KeyConfig{ 
+            player:0, 
+            thrust: KeyCode::ArrowUp,
+            left: KeyCode::ArrowLeft,
+            right: KeyCode::ArrowRight,
+            shoot: KeyCode::Space,
+        },
+    ]
+}
+
+fn get_key_config_for(player: u8) -> Option<KeyConfig> {
+    steering_config().iter().find(|&x| x.player == player).map(|c|c.clone()).into()
+}
+
 fn input_handler(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Speed, &mut Transform, &mut Thruster, &mut Gun), With<Ship>>,
+    mut query: Query<(&mut Speed, &mut Transform, &mut Thruster, &mut Gun, &Ship)>,
     time: Res<Time>,
     mut app_exit_events: ResMut<Events<bevy::app::AppExit>>,
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>
 ) {
-    if keyboard_input.pressed(KeyCode::Space) {
-        for (speed, transform, _, mut gun) in &mut query {
-            let r = transform.rotation.to_euler(EulerRot::XYZ);
-           
-            let rnd = rand::random::<f32>()*0.3-0.15;
-            let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
+    for (mut speed, mut transform, mut thruster, mut gun, ship) in &mut query {
 
-            // speed_up
-            gun.time+=time.delta_seconds();
-            if gun.time > GUN_TIME {
+        if let Some(keys) = get_key_config_for(ship.player) {
 
-                gun.time -= GUN_TIME;
+            if keyboard_input.pressed(keys.shoot) {
+                let r = transform.rotation.to_euler(EulerRot::XYZ);
 
-                commands.spawn((MaterialMesh2dBundle {
-                    mesh: mesh_handles.shot.clone().into(),
-                    transform: Transform::default().with_scale(Vec3::splat(16.))
-                        .with_rotation(transform.rotation)
-                        .with_translation(transform.translation),
-                        material: mesh_handles.material.clone(),
-                        ..Default::default()
-                },
-                Debris{},
-                Speed{speed:speed.speed+v* SHOT_SPEED },
-                Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
-                ));
+                let rnd = rand::random::<f32>()*0.3-0.15;
+                let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
 
+                // speed_up
+                gun.time+=time.delta_seconds();
+                if gun.time > GUN_TIME {
+
+                    gun.time -= GUN_TIME;
+
+                    commands.spawn((MaterialMesh2dBundle {
+                        mesh: mesh_handles.shot.clone().into(),
+                        transform: Transform::default().with_scale(Vec3::splat(16.))
+                            .with_rotation(transform.rotation)
+                            .with_translation(transform.translation),
+                            material: mesh_handles.material.clone(),
+                            ..Default::default()
+                    },
+                    Debris{},
+                    Speed{speed:speed.speed+v* SHOT_SPEED },
+                    Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
+                    ));
+
+                }
+
+            }
+            if keyboard_input.pressed(keys.thrust) {
+                let r = transform.rotation.to_euler(EulerRot::XYZ);
+
+                let rnd = rand::random::<f32>()*0.3-0.15;
+                let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
+                speed.speed+=v*100. * time.delta_seconds();
+
+                // speed_up
+                thruster.thruster_time+=time.delta_seconds();
+                if thruster.thruster_time > THRUSTER_TIME {
+
+                    thruster.thruster_time -= THRUSTER_TIME;
+
+                    commands.spawn((MaterialMesh2dBundle {
+                        mesh: mesh_handles.debris.clone().into(),
+                        transform: Transform::default().with_scale(Vec3::splat(16.))
+                            .with_translation(transform.translation),
+                            material: mesh_handles.material.clone(),
+                            ..Default::default()
+                    },
+                    Debris{},
+                    Speed{speed:speed.speed-v* THRUSTER_SPEED },
+                    Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
+                    ));
+
+                }
+
+            }
+            if keyboard_input.pressed(keys.left) {
+                transform.rotate_z(time.delta_seconds() *5.);
+            }
+            if keyboard_input.pressed(keys.right) {
+                transform.rotate_z(-time.delta_seconds() *5.);
             }
 
         }
     }
-    if keyboard_input.pressed(KeyCode::ArrowUp) {
-        for (mut speed, transform, mut thruster, _) in &mut query {
-            let r = transform.rotation.to_euler(EulerRot::XYZ);
-           
-            let rnd = rand::random::<f32>()*0.3-0.15;
-            let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
-            speed.speed+=v*100. * time.delta_seconds();
-
-            // speed_up
-            thruster.thruster_time+=time.delta_seconds();
-            if thruster.thruster_time > THRUSTER_TIME {
-
-                thruster.thruster_time -= THRUSTER_TIME;
-
-                commands.spawn((MaterialMesh2dBundle {
-                    mesh: mesh_handles.debris.clone().into(),
-                    transform: Transform::default().with_scale(Vec3::splat(16.))
-                        .with_translation(transform.translation),
-                        material: mesh_handles.material.clone(),
-                        ..Default::default()
-                },
-                Debris{},
-                Speed{speed:speed.speed-v* THRUSTER_SPEED },
-                Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
-                ));
-
-            }
-
-        }
-    }
-    if keyboard_input.pressed(KeyCode::ArrowLeft) {
-        for (_speed, mut transform, _, _) in &mut query {
-            transform.rotate_z(time.delta_seconds() *5.);
-        }
-    }
-    if keyboard_input.pressed(KeyCode::ArrowRight) {
-        for (_speed, mut transform, _, _) in &mut query {
-            transform.rotate_z(-time.delta_seconds() *5.);
-        }
-    }
-
     if keyboard_input.pressed(KeyCode::KeyQ) {
         app_exit_events.send(bevy::app::AppExit);
     }
