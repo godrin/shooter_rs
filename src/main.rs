@@ -18,6 +18,7 @@ fn main() {
         .add_systems(Update, input_handler)
         .add_systems(Update, move_speeder)
         .add_systems(Update, kill_debris)
+        .add_systems(Update, check_collisions)
         .run();
 }
 
@@ -138,6 +139,10 @@ fn setupv3(
         ..Default::default()
     },
     Collider::ball(1.0),
+    Sensor,
+    ActiveEvents::COLLISION_EVENTS,
+    RigidBody::Dynamic,
+    GravityScale(0.0),
     Ship { player:0 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
@@ -150,12 +155,24 @@ fn setupv3(
         ..Default::default()
     },
     Collider::ball(1.0),
+    Sensor,
+    ActiveEvents::COLLISION_EVENTS,
+    RigidBody::Dynamic,
+    GravityScale(0.0),
     Ship { player:1 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
     Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.insert_resource(mesh_handles);
+}
+
+fn check_collisions(
+    mut reader: EventReader<CollisionEvent>
+) {
+    for event in reader.read() {
+        dbg!("event {}", event);
+    }
 }
 
 // FIXME: add time
@@ -204,6 +221,13 @@ fn steering_config() -> Vec<KeyConfig> {
             left: KeyCode::ArrowLeft,
             right: KeyCode::ArrowRight,
             shoot: KeyCode::Space,
+        },
+        KeyConfig{ 
+            player:1, 
+            thrust: KeyCode::KeyW,
+            left: KeyCode::KeyA,
+            right: KeyCode::KeyD,
+            shoot: KeyCode::KeyS,
         },
     ]
 }
