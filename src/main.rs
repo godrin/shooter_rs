@@ -143,10 +143,11 @@ fn setupv3(
     ActiveEvents::COLLISION_EVENTS,
     RigidBody::Dynamic,
     GravityScale(0.0),
+    Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
     Ship { player:0 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
-    Speed{speed:Vec2::new(0., 0.) }
+    //Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.spawn((MaterialMesh2dBundle {
         mesh: mesh_handles.fighter.clone().into(),
@@ -159,10 +160,11 @@ fn setupv3(
     ActiveEvents::COLLISION_EVENTS,
     RigidBody::Dynamic,
     GravityScale(0.0),
+    Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
     Ship { player:1 },
     Thruster{thruster_time:0.},
     Gun{time:0.},
-    Speed{speed:Vec2::new(0., 0.) }
+    //Speed{speed:Vec2::new(0., 0.) }
     ));
     commands.insert_resource(mesh_handles);
 }
@@ -238,7 +240,7 @@ fn get_key_config_for(player: u8) -> Option<KeyConfig> {
 
 fn input_handler(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Speed, &mut Transform, &mut Thruster, &mut Gun, &Ship)>,
+    mut query: Query<(&mut Velocity, &mut Transform, &mut Thruster, &mut Gun, &Ship)>,
     time: Res<Time>,
     mut app_exit_events: ResMut<Events<bevy::app::AppExit>>,
     mut commands: Commands,
@@ -269,7 +271,7 @@ fn input_handler(
                             ..Default::default()
                     },
                     Debris{},
-                    Speed{speed:speed.speed+v* SHOT_SPEED },
+                    Speed{speed:speed.linvel+v* SHOT_SPEED },
                     Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
                     ));
 
@@ -281,7 +283,7 @@ fn input_handler(
 
                 let rnd = rand::random::<f32>()*0.3-0.15;
                 let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
-                speed.speed+=v*100. * time.delta_seconds();
+                speed.linvel+=v*100. * time.delta_seconds();
 
                 // speed_up
                 thruster.thruster_time+=time.delta_seconds();
@@ -297,7 +299,7 @@ fn input_handler(
                             ..Default::default()
                     },
                     Debris{},
-                    Speed{speed:speed.speed-v* THRUSTER_SPEED },
+                    Speed{speed:speed.linvel-v* THRUSTER_SPEED },
                     Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
                     ));
 
