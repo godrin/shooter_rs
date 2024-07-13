@@ -187,30 +187,51 @@ fn setupv3(
                 rand::random::<f32>()*100.-50.,
                 rand::random::<f32>()*100.-50.,
                 0.);
+        spawn_asteroid(&mut commands, pos, &mesh_handles, 4.);
+    }
+    commands.insert_resource(mesh_handles);
+}
+
+fn spawn_asteroid(
+    commands: &mut Commands,
+    pos: Vec3,
+    mesh_handles: &MeshHandles,
+    size: f32
+    ) {
         commands.spawn((MaterialMesh2dBundle {
             mesh: mesh_handles.asteroid.clone().into(),
-            transform: Transform::default().with_translation(pos),
+            transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
             material: mesh_handles.material.clone(),
             ..Default::default()
         },
-        Collider::ball(16.0),
+        Collider::ball(4.0),
         ActiveEvents::CONTACT_FORCE_EVENTS,
         RigidBody::Dynamic,
         GravityScale(0.0),
         Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
         ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
         Restitution::coefficient(0.7),
-        Shield { energy: 1.0 },
+        Shield { energy: 0.2 },
         Asteroid,
         ));
-    }
-    commands.insert_resource(mesh_handles);
 }
 
 fn kill(mut reader: EventReader<Boom>,
-    mut commands: Commands) {
+    asteroids: Query<(&Transform, &Asteroid)>,
+    mut commands: Commands,
+    mesh_handles: Res<MeshHandles>
+    ) {
     for event in reader.read() {
-        commands.entity(event.entity).despawn();
+        if let Ok((asteroid_transform, asteroid)) = asteroids.get(event.entity) {
+            if asteroid_transform.scale.x>1. {
+                for _ in 0..3 {
+                    spawn_asteroid(&mut commands, asteroid_transform.translation, &mesh_handles, asteroid_transform.scale.x/2.);
+                }
+            }
+        }
+        if let Some(mut e) = commands.get_entity(event.entity) {
+            e.despawn();
+        }
     }
 }
 
