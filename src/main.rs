@@ -1,16 +1,16 @@
 use std::ops::Mul;
 
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
 
-use bevy::prelude::*;
-use bevy::sprite::{MaterialMesh2dBundle, Mesh2dHandle};
+use bevy::sprite::MaterialMesh2dBundle;
+
 use bevy::render::{
-    mesh::{Indices, VertexAttributeValues},
+    mesh::Indices,
     render_asset::RenderAssetUsages,
     render_resource::PrimitiveTopology,
 };
-use bevy_rapier2d::rapier::geometry::ColliderBuilder;
+use bevy_rapier2d::prelude::*;
+
 
 fn main() {
     App::new()
@@ -186,7 +186,7 @@ fn move_speeder(
 }
 
 fn warp_space(mut query: Query<&mut Transform>) {
-    for (mut transform) in &mut query {
+    for mut transform in &mut query {
         if transform.translation.x < -SPACE_SIZE {
             transform.translation.x += 2. * SPACE_SIZE;
         }
@@ -262,7 +262,7 @@ fn input_handler(
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>
 ) {
-    for (mut speed, mut impulse, mut transform, mut thruster, mut gun, ship) in &mut query {
+    for (mut speed, mut impulse, transform, mut thruster, mut gun, ship) in &mut query {
 
         if let Some(keys) = get_key_config_for(ship.player) {
 
