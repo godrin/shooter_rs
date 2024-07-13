@@ -16,22 +16,35 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+//        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_event::<Boom>()
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
         .add_systems(Update, move_speeder)
         .add_systems(Update, kill_debris)
-        .add_systems(Update, check_collisions)
+        .add_systems(Update, (check_collisions, kill))
         .add_systems(Update, warp_space)
         .run();
+}
+#[derive(Event)]
+struct Boom {
+    entity: Entity
 }
 
 #[derive(Component)]
 struct Debris;
 
 #[derive(Component)]
+struct Asteroid;
+
+#[derive(Component)]
 struct Ship {
     player: u8
+}
+
+#[derive(Component)]
+struct Shield {
+    energy:f32
 }
 
 #[derive(Component)]
@@ -78,6 +91,15 @@ fn create_figter() -> Vec<Vec3>  {
     ]
 }
 
+fn create_asteroid() -> Vec<Vec3> {
+    vec![
+        Vec3::new(0.0, 0.3, 0.0), 
+        Vec3::new(0.3, 0., 0.0), 
+        Vec3::new(0.0, -0.3, 0.0),
+        Vec3::new(-0.3,0.,0.)
+    ]
+}
+
 fn create_debris() -> Vec<Vec3> {
     vec![
         Vec3::new(0.0, 0.3, 0.0), 
@@ -119,8 +141,8 @@ struct MeshHandles {
     fighter: Handle<Mesh>,
     debris: Handle<Mesh>,
     shot: Handle<Mesh>,
+    asteroid: Handle<Mesh>,
     material: Handle<ColorMaterial>
-
 }
 
 fn setupv3(
@@ -133,12 +155,13 @@ fn setupv3(
         fighter : meshes.add(create_mesh(create_figter(), 32.)),
         debris : meshes.add(create_mesh(create_debris(), 16.)),
         shot : meshes.add(create_mesh(create_shot(), 16.)),
+        asteroid : meshes.add(create_mesh(create_asteroid(), 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
     };
 
     commands.spawn(Camera2dBundle::default());
 
-    for (i, pos) in vec![Vec3::new(0.,0.,0.), Vec3::new(100.,100.,0.)].iter().enumerate() {
+    for (i, pos) in vec![Vec3::new(-100.,0.,0.), Vec3::new(100.,0.,0.)].iter().enumerate() {
         commands.spawn((MaterialMesh2dBundle {
             mesh: mesh_handles.ship.clone().into(),
             transform: Transform::default().with_translation(*pos),
@@ -153,16 +176,49 @@ fn setupv3(
         ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
         Restitution::coefficient(0.7),
         Ship { player:i as u8 },
+        Shield { energy: 1.0 },
         Thruster{thruster_time:0.},
         Gun{time:0.},
+        ));
+    }
+
+    for _ in 1..10 {
+        let pos = Vec3::new(
+                rand::random::<f32>()*100.-50.,
+                rand::random::<f32>()*100.-50.,
+                0.);
+        commands.spawn((MaterialMesh2dBundle {
+            mesh: mesh_handles.asteroid.clone().into(),
+            transform: Transform::default().with_translation(pos),
+            material: mesh_handles.material.clone(),
+            ..Default::default()
+        },
+        Collider::ball(16.0),
+        ActiveEvents::CONTACT_FORCE_EVENTS,
+        RigidBody::Dynamic,
+        GravityScale(0.0),
+        Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
+        ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
+        Restitution::coefficient(0.7),
+        Shield { energy: 1.0 },
+        Asteroid,
         ));
     }
     commands.insert_resource(mesh_handles);
 }
 
+fn kill(mut reader: EventReader<Boom>,
+    mut commands: Commands) {
+    for event in reader.read() {
+        commands.entity(event.entity).despawn();
+    }
+}
+
 fn check_collisions(
     mut reader: EventReader<CollisionEvent>,
-    mut reader2: EventReader<ContactForceEvent>
+    mut reader2: EventReader<ContactForceEvent>,
+    mut ships: Query<&mut Shield>,
+    mut writer: EventWriter<'_, Boom>
 ) {
     for event in reader.read() {
         dbg!("event {}", event);
@@ -172,6 +228,15 @@ fn check_collisions(
             dbg!("BOOM");
         }
         dbg!("event {}", event);
+
+        for entity in vec![event.collider1, event.collider2] {
+            if let Ok(mut ship) = ships.get_mut(entity) {
+                (*ship).energy-=0.05;
+                if ship.energy <0. {
+                    writer.send(Boom { entity });
+                }
+            }
+        }
     }
 }
 
@@ -269,10 +334,9 @@ fn input_handler(
             if keyboard_input.pressed(keys.shoot) {
                 let r = transform.rotation.to_euler(EulerRot::XYZ);
 
-                let rnd = rand::random::<f32>()*0.3-0.15;
+                let rnd = rand::random::<f32>()*0.1-0.05;
                 let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
 
-                // speed_up
                 gun.time+=time.delta_seconds();
                 if gun.time > GUN_TIME {
 
@@ -287,7 +351,10 @@ fn input_handler(
                             ..Default::default()
                     },
                     Debris{},
-                    Speed{speed:speed.linvel+v* SHOT_SPEED },
+                    RigidBody::Dynamic,
+                    GravityScale(0.0),
+                    Collider::ball(2.0),
+                    Velocity{linvel:speed.linvel+v* SHOT_SPEED, angvel:0. },
                     Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
                     ));
 
@@ -299,7 +366,6 @@ fn input_handler(
 
                 let rnd = rand::random::<f32>()*0.3-0.15;
                 let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
-                //speed.linvel+=v*100. * time.delta_seconds();
                 impulse.impulse =v*100000. * time.delta_seconds(); 
 
                 // speed_up
@@ -324,11 +390,10 @@ fn input_handler(
 
             }
             if keyboard_input.pressed(keys.left) {
+                // instead - maybe add a force?
                 speed.angvel=5.;
-//                transform.rotate_z(time.delta_seconds() *5.);
             } else if keyboard_input.pressed(keys.right) {
                 speed.angvel=-5.;
-            //    transform.rotate_z(-time.delta_seconds() *5.);
             } else {
                 speed.angvel=0.;
             }
