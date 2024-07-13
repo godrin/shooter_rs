@@ -1,3 +1,5 @@
+use std::ops::Mul;
+
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
@@ -8,6 +10,7 @@ use bevy::render::{
     render_asset::RenderAssetUsages,
     render_resource::PrimitiveTopology,
 };
+use bevy_rapier2d::rapier::geometry::ColliderBuilder;
 
 fn main() {
     App::new()
@@ -19,6 +22,7 @@ fn main() {
         .add_systems(Update, move_speeder)
         .add_systems(Update, kill_debris)
         .add_systems(Update, check_collisions)
+        .add_systems(Update, warp_space)
         .run();
 }
 
@@ -92,7 +96,8 @@ fn create_shot() -> Vec<Vec3> {
     ]
 }
 
-fn create_mesh(lines: Vec<Vec3>) -> Mesh {
+fn create_mesh(lines: Vec<Vec3>, scale:f32) -> Mesh {
+    let lines2:Vec<Vec3> = lines.iter().map(|v|v.mul(scale)).collect();
     let len = lines.len();
     let mut indexes:Vec<u32> = (0..(len as u32)).collect();
     indexes.push(0);
@@ -100,7 +105,7 @@ fn create_mesh(lines: Vec<Vec3>) -> Mesh {
     Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            lines
+            lines2
         )
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_COLOR, vec![[1.0, 1.0, 1.0, 1.0]; len])
@@ -124,55 +129,48 @@ fn setupv3(
     mut materials: ResMut<Assets<ColorMaterial>>
 ) {
     let mesh_handles=MeshHandles {
-        ship : meshes.add(create_mesh(create_ship())),
-        fighter : meshes.add(create_mesh(create_figter())),
-        debris : meshes.add(create_mesh(create_debris())),
-        shot : meshes.add(create_mesh(create_shot())),
+        ship : meshes.add(create_mesh(create_ship(), 16.)),
+        fighter : meshes.add(create_mesh(create_figter(), 32.)),
+        debris : meshes.add(create_mesh(create_debris(), 16.)),
+        shot : meshes.add(create_mesh(create_shot(), 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
     };
 
     commands.spawn(Camera2dBundle::default());
-    commands.spawn((MaterialMesh2dBundle {
-        mesh: mesh_handles.ship.clone().into(),
-        transform: Transform::default().with_scale(Vec3::splat(16.)).with_translation(Vec3::new(100., 100. , 0.)),
-        material: mesh_handles.material.clone(),
-        ..Default::default()
-    },
-    Collider::ball(1.0),
-    Sensor,
-    ActiveEvents::COLLISION_EVENTS,
-    RigidBody::Dynamic,
-    GravityScale(0.0),
-    Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
-    Ship { player:0 },
-    Thruster{thruster_time:0.},
-    Gun{time:0.},
-    //Speed{speed:Vec2::new(0., 0.) }
-    ));
-    commands.spawn((MaterialMesh2dBundle {
-        mesh: mesh_handles.fighter.clone().into(),
-        transform: Transform::default().with_scale(Vec3::splat(32.)),
-        material: mesh_handles.material.clone(),
-        ..Default::default()
-    },
-    Collider::ball(1.0),
-    Sensor,
-    ActiveEvents::COLLISION_EVENTS,
-    RigidBody::Dynamic,
-    GravityScale(0.0),
-    Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
-    Ship { player:1 },
-    Thruster{thruster_time:0.},
-    Gun{time:0.},
-    //Speed{speed:Vec2::new(0., 0.) }
-    ));
+
+    for (i, pos) in vec![Vec3::new(0.,0.,0.), Vec3::new(100.,100.,0.)].iter().enumerate() {
+        commands.spawn((MaterialMesh2dBundle {
+            mesh: mesh_handles.ship.clone().into(),
+            transform: Transform::default().with_translation(*pos),
+            material: mesh_handles.material.clone(),
+            ..Default::default()
+        },
+        Collider::ball(16.0),
+        ActiveEvents::CONTACT_FORCE_EVENTS,
+        RigidBody::Dynamic,
+        GravityScale(0.0),
+        Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
+        ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
+        Restitution::coefficient(0.7),
+        Ship { player:i as u8 },
+        Thruster{thruster_time:0.},
+        Gun{time:0.},
+        ));
+    }
     commands.insert_resource(mesh_handles);
 }
 
 fn check_collisions(
-    mut reader: EventReader<CollisionEvent>
+    mut reader: EventReader<CollisionEvent>,
+    mut reader2: EventReader<ContactForceEvent>
 ) {
     for event in reader.read() {
+        dbg!("event {}", event);
+    }
+    for event in reader2.read() {
+        if event.total_force_magnitude>5000000. {
+            dbg!("BOOM");
+        }
         dbg!("event {}", event);
     }
 }
@@ -184,6 +182,23 @@ fn move_speeder(
 ) {
     for (speed, mut transform) in &mut query {
         transform.translation+=speed.speed.extend(0.) * time.delta_seconds();
+    }
+}
+
+fn warp_space(mut query: Query<&mut Transform>) {
+    for (mut transform) in &mut query {
+        if transform.translation.x < -SPACE_SIZE {
+            transform.translation.x += 2. * SPACE_SIZE;
+        }
+        if transform.translation.y < -SPACE_SIZE {
+            transform.translation.y += 2. * SPACE_SIZE;
+        }
+        if transform.translation.x > SPACE_SIZE {
+            transform.translation.x -= 2. * SPACE_SIZE;
+        }
+        if transform.translation.y > SPACE_SIZE {
+            transform.translation.y -= 2. * SPACE_SIZE;
+        }
     }
 }
 
@@ -205,6 +220,7 @@ const THRUSTER_SPEED:f32 = 200.;
 const GUN_TIME:f32 = 0.05;
 const GUN_LIFETIME:f32 = 0.5;
 const SHOT_SPEED:f32 = 400.;
+const SPACE_SIZE:f32 = 400.;
 
 #[derive(Clone)]
 struct KeyConfig {
@@ -240,13 +256,13 @@ fn get_key_config_for(player: u8) -> Option<KeyConfig> {
 
 fn input_handler(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Velocity, &mut Transform, &mut Thruster, &mut Gun, &Ship)>,
+    mut query: Query<(&mut Velocity, &mut ExternalImpulse, &mut Transform, &mut Thruster, &mut Gun, &Ship)>,
     time: Res<Time>,
     mut app_exit_events: ResMut<Events<bevy::app::AppExit>>,
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>
 ) {
-    for (mut speed, mut transform, mut thruster, mut gun, ship) in &mut query {
+    for (mut speed, mut impulse, mut transform, mut thruster, mut gun, ship) in &mut query {
 
         if let Some(keys) = get_key_config_for(ship.player) {
 
@@ -264,7 +280,7 @@ fn input_handler(
 
                     commands.spawn((MaterialMesh2dBundle {
                         mesh: mesh_handles.shot.clone().into(),
-                        transform: Transform::default().with_scale(Vec3::splat(16.))
+                        transform: Transform::default()
                             .with_rotation(transform.rotation)
                             .with_translation(transform.translation),
                             material: mesh_handles.material.clone(),
@@ -283,7 +299,8 @@ fn input_handler(
 
                 let rnd = rand::random::<f32>()*0.3-0.15;
                 let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
-                speed.linvel+=v*100. * time.delta_seconds();
+                //speed.linvel+=v*100. * time.delta_seconds();
+                impulse.impulse =v*100000. * time.delta_seconds(); 
 
                 // speed_up
                 thruster.thruster_time+=time.delta_seconds();
@@ -293,7 +310,7 @@ fn input_handler(
 
                     commands.spawn((MaterialMesh2dBundle {
                         mesh: mesh_handles.debris.clone().into(),
-                        transform: Transform::default().with_scale(Vec3::splat(16.))
+                        transform: Transform::default()
                             .with_translation(transform.translation),
                             material: mesh_handles.material.clone(),
                             ..Default::default()
@@ -307,10 +324,13 @@ fn input_handler(
 
             }
             if keyboard_input.pressed(keys.left) {
-                transform.rotate_z(time.delta_seconds() *5.);
-            }
-            if keyboard_input.pressed(keys.right) {
-                transform.rotate_z(-time.delta_seconds() *5.);
+                speed.angvel=5.;
+//                transform.rotate_z(time.delta_seconds() *5.);
+            } else if keyboard_input.pressed(keys.right) {
+                speed.angvel=-5.;
+            //    transform.rotate_z(-time.delta_seconds() *5.);
+            } else {
+                speed.angvel=0.;
             }
 
         }
