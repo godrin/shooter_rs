@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use std::ops::Mul;
 
 use bevy::prelude::*;
@@ -69,10 +70,10 @@ struct Lifetime {
 
 fn create_ship() -> Vec<Vec3>  {
     vec![
-        Vec3::new(0.0, 1.0, 0.0), 
-        Vec3::new(0.6, -0.3, 0.0), 
+        Vec3::new(0.0, 0.7, 0.0), 
+        Vec3::new(0.6, -0.5, 0.0), 
         Vec3::new(0.0, -0.1, 0.0),
-        Vec3::new(-0.6,-0.3,0.)
+        Vec3::new(-0.6,-0.5,0.)
     ]
 }
 
@@ -118,6 +119,12 @@ fn create_shot() -> Vec<Vec3> {
     ]
 }
 
+fn create_shield() -> Vec<Vec3> {
+    let segments = 10;
+    (0..segments).into_iter().map(|i|Vec2::from_angle((i as f32)*2.*PI/(segments as f32)).extend(0.)
+        ).collect()
+}
+
 fn create_mesh(lines: Vec<Vec3>, scale:f32) -> Mesh {
     let lines2:Vec<Vec3> = lines.iter().map(|v|v.mul(scale)).collect();
     let len = lines.len();
@@ -142,6 +149,7 @@ struct MeshHandles {
     debris: Handle<Mesh>,
     shot: Handle<Mesh>,
     asteroid: Handle<Mesh>,
+    shield: Handle<Mesh>,
     material: Handle<ColorMaterial>
 }
 
@@ -156,6 +164,7 @@ fn setupv3(
         debris : meshes.add(create_mesh(create_debris(), 16.)),
         shot : meshes.add(create_mesh(create_shot(), 16.)),
         asteroid : meshes.add(create_mesh(create_asteroid(), 16.)),
+        shield : meshes.add(create_mesh(create_shield(), 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
     };
 
@@ -179,7 +188,19 @@ fn setupv3(
         Shield { energy: 1.0 },
         Thruster{thruster_time:0.},
         Gun{time:0.},
-        ));
+        )).with_children(|p| {
+            p.spawn((
+                    MaterialMesh2dBundle {
+                        mesh: mesh_handles.shield.clone().into(),
+                        transform: Transform::default(),
+                        material: materials.add(ColorMaterial::from(Color::RED)),
+                        ..Default::default()
+                    },
+                    Shield{energy:1.0}
+                    ));
+        }
+        );
+
     }
 
     for _ in 1..10 {
@@ -403,7 +424,8 @@ fn input_handler(
                             ..Default::default()
                     },
                     Debris{},
-                    Speed{speed:speed.linvel-v* THRUSTER_SPEED },
+                    RigidBody::Dynamic,
+                    Velocity{linvel:speed.linvel-v* THRUSTER_SPEED, angvel:0. },
                     Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
                     ));
 
