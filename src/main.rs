@@ -25,6 +25,7 @@ fn main() {
         .add_systems(Update, kill_debris)
         .add_systems(Update, (check_collisions, kill))
         .add_systems(Update, warp_space)
+        .add_systems(Update, copy_shield_value)
         .run();
 }
 #[derive(Event)]
@@ -120,7 +121,7 @@ fn create_shot() -> Vec<Vec3> {
 }
 
 fn create_shield() -> Vec<Vec3> {
-    let segments = 10;
+    let segments = 8;
     (0..segments).into_iter().map(|i|Vec2::from_angle((i as f32)*2.*PI/(segments as f32)).extend(0.)
         ).collect()
 }
@@ -213,6 +214,21 @@ fn setupv3(
     commands.insert_resource(mesh_handles);
 }
 
+fn copy_shield_value(
+    ship_shield: Query<&Shield, (With<Ship>, Changed<Shield>)>,
+    mut shield: Query<(&mut Shield, &Parent, &mut Handle<ColorMaterial>), Without<Ship>>,
+    mut materials: ResMut<Assets<ColorMaterial>>
+) {
+    for (mut shield, parent, mut material) in &mut shield {
+        if let Ok(p) = ship_shield.get(parent.get()) {
+            shield.energy = p.energy;
+            let x = materials.add(ColorMaterial::from(Color::rgba(1., 1., 1., p.energy)));
+            *material = x;
+        }
+    }
+}
+
+
 fn spawn_asteroid(
     commands: &mut Commands,
     pos: Vec3,
@@ -257,20 +273,11 @@ fn kill(mut reader: EventReader<Boom>,
 }
 
 fn check_collisions(
-    mut reader: EventReader<CollisionEvent>,
     mut reader2: EventReader<ContactForceEvent>,
     mut ships: Query<&mut Shield>,
     mut writer: EventWriter<'_, Boom>
 ) {
-    for event in reader.read() {
-        dbg!("event {}", event);
-    }
     for event in reader2.read() {
-        if event.total_force_magnitude>5000000. {
-            dbg!("BOOM");
-        }
-        dbg!("event {}", event);
-
         for entity in vec![event.collider1, event.collider2] {
             if let Ok(mut ship) = ships.get_mut(entity) {
                 (*ship).energy-=0.05;
