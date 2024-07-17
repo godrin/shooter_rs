@@ -13,11 +13,13 @@ use bevy::render::{
 use bevy_rapier2d::prelude::*;
 
 
+const HEAL_SPEED: f32=0.2;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-//        .add_plugins(RapierDebugRenderPlugin::default())
+        //        .add_plugins(RapierDebugRenderPlugin::default())
         .add_event::<Boom>()
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
@@ -25,7 +27,10 @@ fn main() {
         .add_systems(Update, kill_debris)
         .add_systems(Update, (check_collisions, kill))
         .add_systems(Update, warp_space)
+        .add_systems(Update, load_shield)
         .add_systems(Update, copy_shield_value)
+        .add_systems(Update, init_energy_display)
+        .add_systems(Update, arrange_energy_display)
         .run();
 }
 #[derive(Event)]
@@ -35,6 +40,11 @@ struct Boom {
 
 #[derive(Component)]
 struct Debris;
+
+#[derive(Component)]
+struct EnergyDisplay {
+    ship: Entity
+}
 
 #[derive(Component)]
 struct Asteroid;
@@ -155,13 +165,14 @@ struct MeshHandles {
     shot: Handle<Mesh>,
     asteroid: Handle<Mesh>,
     shield: Handle<Mesh>,
-    material: Handle<ColorMaterial>
+    material: Handle<ColorMaterial>,
+    shot_material: Handle<ColorMaterial>,
 }
 
 fn setupv3(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let mesh_handles=MeshHandles {
         ship : meshes.add(create_mesh(create_ship(), 16.)),
@@ -171,6 +182,7 @@ fn setupv3(
         asteroid : meshes.add(create_mesh(create_asteroid(), 16.)),
         shield : meshes.add(create_mesh(create_shield(), 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
+        shot_material: materials.add(ColorMaterial::from(Color::RED)),
     };
 
     commands.spawn(Camera2dBundle::default());
@@ -189,6 +201,7 @@ fn setupv3(
         Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
         ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
         Restitution::coefficient(0.7),
+        Sleeping::disabled(),
         Ship { player:i as u8 },
         Shield { energy: 1.0 },
         Thruster{thruster_time:0.},
@@ -217,6 +230,59 @@ fn setupv3(
     }
     commands.insert_resource(mesh_handles);
 }
+        
+
+fn init_energy_display(
+    ships: Query<(Entity, &Transform), Changed<Ship>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>
+) {
+    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
+
+    let text_style = TextStyle {
+        font: font.clone(),
+        font_size: 10.0,
+        color: Color::WHITE,
+    };
+    for (ship, &transform) in &ships {
+        commands
+            .spawn((
+                    Text2dBundle {
+                        text: Text::from_section("asdsd", text_style.clone()),
+                        transform,
+                            ..default()
+                    },
+                    EnergyDisplay {ship},
+            ));
+    }
+}
+
+fn load_shield(
+    mut ships: Query<&mut Shield, With<Ship>>,
+    timer: Res<Time>
+) {
+    for mut ship in &mut ships {
+        if ship.energy>=0. {
+            ship.energy+=timer.delta_seconds() * HEAL_SPEED;
+            if ship.energy>1. {
+                ship.energy = 1.;
+            }
+        }
+    }
+}
+
+fn arrange_energy_display(
+    ships: Query<(&Transform, &Ship, &Shield), With<Ship>>,
+    mut displays: Query<(&mut Transform, &EnergyDisplay, &mut Text), Without<Ship>>
+) {
+    for (mut transform, display, mut text) in &mut displays {
+        if let Ok((ship_transform,ship, shield)) = ships.get(display.ship) {
+            transform.translation = ship_transform.translation+ Vec3::new(-20., 30., 0.);
+            text.sections = vec![TextSection::from(format!("{:0} %",(100.*shield.energy) as i32))];
+        }
+    }
+}
+
 
 fn copy_shield_value(
     ship_shield: Query<&Shield, (With<Ship>, Changed<Shield>)>,
@@ -249,10 +315,11 @@ fn spawn_asteroid(
     ActiveEvents::CONTACT_FORCE_EVENTS,
     RigidBody::Dynamic,
     GravityScale(0.0),
+    Sleeping::disabled(),
     Velocity{ linvel:velocity.linvel, angvel:0.0},
     ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
     Restitution::coefficient(0.7),
-    Shield { energy: 0.2 },
+    Shield { energy: 0.1 },
     Asteroid,
     ));
 }
@@ -341,7 +408,7 @@ const THRUSTER_TIME:f32 = 0.05;
 const THRUSTER_LIFETIME:f32 = 0.5;
 const THRUSTER_SPEED:f32 = 200.;
 const GUN_TIME:f32 = 0.2;
-const GUN_LIFETIME:f32 = 0.5;
+const GUN_LIFETIME:f32 = 1.0;
 const SHOT_SPEED:f32 = 400.;
 const SPACE_SIZE:f32 = 400.;
 
@@ -404,7 +471,7 @@ fn input_handler(
                         transform: Transform::default()
                             .with_rotation(transform.rotation)
                             .with_translation(transform.translation+v.extend(0.)),
-                            material: mesh_handles.material.clone(),
+                            material: mesh_handles.shot_material.clone(),
                             ..Default::default()
                     },
                     Debris{},
