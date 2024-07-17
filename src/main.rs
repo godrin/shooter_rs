@@ -104,6 +104,11 @@ fn create_shot() -> Vec<Vec3> {
     ]
 }
 
+const MOON_TILES:usize = 15;
+fn create_moon() -> Vec<Vec3> {
+   (0..MOON_TILES).map(|i|Vec2::from_angle(i as f32*PI*2.0/MOON_TILES as f32).extend(0.)).collect()
+}
+
 fn create_shield() -> Vec<Vec3> {
     let segments = 8;
     (0..segments).into_iter().map(|i|
@@ -131,6 +136,33 @@ fn create_mesh(geometry: fn()->Vec<Vec3>, scale:f32) -> Mesh {
             Indices::U32(indexes))
 }
 
+#[derive(Bundle)]
+struct Celestial {
+        events: ActiveEvents,
+        body: RigidBody,
+        gravity_scale: GravityScale,
+        mass_property: ReadMassProperties,
+        force: ExternalForce,
+        velocity: Velocity,
+        restitution: Restitution,
+        sleeping:Sleeping,
+}
+
+impl Default for Celestial {
+    fn default() -> Self {
+       Celestial {
+        events: ActiveEvents::CONTACT_FORCE_EVENTS,
+        body: RigidBody::Dynamic,
+        gravity_scale: GravityScale(0.0),
+        mass_property: ReadMassProperties::default(),
+        force: ExternalForce::default(),
+        velocity: Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
+        restitution: Restitution::coefficient(0.7),
+        sleeping: Sleeping::disabled(),
+       }
+    }
+}
+
 #[derive(Resource)]
 struct MeshHandles {
     ship: Handle<Mesh>,
@@ -139,6 +171,8 @@ struct MeshHandles {
     shot: Handle<Mesh>,
     asteroid: Handle<Mesh>,
     shield: Handle<Mesh>,
+    moon: Handle<Mesh>,
+
     material: Handle<ColorMaterial>,
     shot_material: Handle<ColorMaterial>,
     debris_material: Handle<ColorMaterial>,
@@ -156,6 +190,8 @@ fn setupv3(
         shot : meshes.add(create_mesh(create_shot, 16.)),
         asteroid : meshes.add(create_mesh(create_asteroid, 8.)),
         shield : meshes.add(create_mesh(create_shield, 16.)),
+        moon : meshes.add(create_mesh(create_moon, 16.)),
+
         material: materials.add(ColorMaterial::from(Color::BLUE)),
         shot_material: materials.add(ColorMaterial::from(Color::RED)),
         debris_material: materials.add(ColorMaterial::from(Color::GRAY)),
@@ -208,7 +244,38 @@ fn setupv3(
     }
     commands.insert_resource(mesh_handles);
 }
+
+
         
+fn spawn_asteroid(
+    commands: &mut Commands,
+    pos: Vec3,
+    mesh_handles: &MeshHandles,
+    size: f32,
+    velocity: Velocity
+) {
+    let vertices:Vec<Vec2> = create_asteroid().iter().map(|v|v.xy()*8.).collect();
+
+    commands.spawn((MaterialMesh2dBundle {
+        mesh: mesh_handles.asteroid.clone().into(),
+        transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
+        material: mesh_handles.material.clone(),
+        ..Default::default()
+    },
+    Collider::convex_hull(vertices.as_slice()).unwrap(),
+    ActiveEvents::CONTACT_FORCE_EVENTS,
+    RigidBody::Dynamic,
+    ReadMassProperties::default(),
+    ExternalForce::default(),
+    GravityScale(0.0),
+    Sleeping::disabled(),
+    Velocity{ linvel:velocity.linvel, angvel:0.0},
+    ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
+    Restitution::coefficient(0.7),
+    Shield { energy: 0.1 },
+    Asteroid,
+    ));
+}
 
 fn init_energy_display(
     ships: Query<(Entity, &Transform), Changed<Ship>>,
@@ -298,36 +365,6 @@ fn apply_gravity(
     }
 }
 
-fn spawn_asteroid(
-    commands: &mut Commands,
-    pos: Vec3,
-    mesh_handles: &MeshHandles,
-    size: f32,
-    velocity: Velocity
-) {
-
-    let vertices:Vec<Vec2> = create_asteroid().iter().map(|v|v.xy()*8.).collect();
-
-    commands.spawn((MaterialMesh2dBundle {
-        mesh: mesh_handles.asteroid.clone().into(),
-        transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
-        material: mesh_handles.material.clone(),
-        ..Default::default()
-    },
-    Collider::convex_hull(vertices.as_slice()).unwrap(),
-    ActiveEvents::CONTACT_FORCE_EVENTS,
-    RigidBody::Dynamic,
-    ReadMassProperties::default(),
-    ExternalForce::default(),
-    GravityScale(0.0),
-    Sleeping::disabled(),
-    Velocity{ linvel:velocity.linvel, angvel:0.0},
-    ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
-    Restitution::coefficient(0.7),
-    Shield { energy: 0.1 },
-    Asteroid,
-    ));
-}
 
 fn kill(mut reader: EventReader<Boom>,
     asteroids: Query<(&Transform, &Velocity), With<Asteroid>>,

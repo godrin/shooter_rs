@@ -17,6 +17,10 @@ pub struct Ship {
 }
 
 #[derive(Component)]
+pub struct Moon {
+}
+
+#[derive(Component)]
 pub struct Shield {
     pub energy:f32
 }
