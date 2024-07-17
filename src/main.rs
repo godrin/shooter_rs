@@ -122,17 +122,21 @@ fn create_shot() -> Vec<Vec3> {
 
 fn create_shield() -> Vec<Vec3> {
     let segments = 8;
-    (0..segments).into_iter().map(|i|Vec2::from_angle((i as f32)*2.*PI/(segments as f32)).extend(0.)
-        ).collect()
+    (0..segments).into_iter().map(|i|
+        Vec2::from_angle((i as f32)*2.*PI/(segments as f32)).extend(0.)
+    ).collect()
 }
 
 fn create_mesh(lines: Vec<Vec3>, scale:f32) -> Mesh {
-    let lines2:Vec<Vec3> = lines.iter().map(|v|v.mul(scale)).collect();
+    let lines2:Vec<Vec3> = lines.iter().map(|v|
+        v.mul(scale)
+    ).collect();
     let len = lines.len();
     let mut indexes:Vec<u32> = (0..(len as u32)).collect();
     indexes.push(0);
     /* //![0, 1, 2, 3, 0])) */
-    Mesh::new(PrimitiveTopology::LineStrip, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
+    Mesh::new(PrimitiveTopology::LineStrip,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
             lines2
@@ -198,18 +202,18 @@ fn setupv3(
                         ..Default::default()
                     },
                     Shield{energy:1.0}
-                    ));
+            ));
         }
         );
 
     }
 
-    for _ in 1..10 {
+    for _ in 1..12 {
         let pos = Vec3::new(
-                rand::random::<f32>()*100.-50.,
-                rand::random::<f32>()*100.-50.,
-                0.);
-        spawn_asteroid(&mut commands, pos, &mesh_handles, 4.);
+            rand::random::<f32>()*100.-50.,
+            rand::random::<f32>()*100.-50.,
+            0.);
+        spawn_asteroid(&mut commands, pos, &mesh_handles, 4., Velocity{linvel:Vec2::ZERO, angvel:0.});
     }
     commands.insert_resource(mesh_handles);
 }
@@ -228,41 +232,41 @@ fn copy_shield_value(
     }
 }
 
-
 fn spawn_asteroid(
     commands: &mut Commands,
     pos: Vec3,
     mesh_handles: &MeshHandles,
-    size: f32
-    ) {
-        commands.spawn((MaterialMesh2dBundle {
-            mesh: mesh_handles.asteroid.clone().into(),
-            transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
-            material: mesh_handles.material.clone(),
-            ..Default::default()
-        },
-        Collider::ball(4.0),
-        ActiveEvents::CONTACT_FORCE_EVENTS,
-        RigidBody::Dynamic,
-        GravityScale(0.0),
-        Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
-        ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
-        Restitution::coefficient(0.7),
-        Shield { energy: 0.2 },
-        Asteroid,
-        ));
+    size: f32,
+    velocity: Velocity
+) {
+    commands.spawn((MaterialMesh2dBundle {
+        mesh: mesh_handles.asteroid.clone().into(),
+        transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
+        material: mesh_handles.material.clone(),
+        ..Default::default()
+    },
+    Collider::ball(4.0),
+    ActiveEvents::CONTACT_FORCE_EVENTS,
+    RigidBody::Dynamic,
+    GravityScale(0.0),
+    Velocity{ linvel:velocity.linvel, angvel:0.0},
+    ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
+    Restitution::coefficient(0.7),
+    Shield { energy: 0.2 },
+    Asteroid,
+    ));
 }
 
 fn kill(mut reader: EventReader<Boom>,
-    asteroids: Query<(&Transform, &Asteroid)>,
+    asteroids: Query<(&Transform, &Velocity), With<Asteroid>>,
     mut commands: Commands,
     mesh_handles: Res<MeshHandles>
-    ) {
+) {
     for event in reader.read() {
-        if let Ok((asteroid_transform, asteroid)) = asteroids.get(event.entity) {
+        if let Ok((asteroid_transform, velocity)) = asteroids.get(event.entity) {
             if asteroid_transform.scale.x>1. {
-                for _ in 0..3 {
-                    spawn_asteroid(&mut commands, asteroid_transform.translation, &mesh_handles, asteroid_transform.scale.x/2.);
+                for _ in 0..4 {
+                    spawn_asteroid(&mut commands, asteroid_transform.translation+ Vec3::new(rand::random::<f32>()*20.,rand::random::<f32>()*20.,0.), &mesh_handles, asteroid_transform.scale.x/2., velocity.clone());
                 }
             }
         }
@@ -274,15 +278,20 @@ fn kill(mut reader: EventReader<Boom>,
 
 fn check_collisions(
     mut reader2: EventReader<ContactForceEvent>,
-    mut ships: Query<&mut Shield>,
+    mut objects: Query<&mut Shield>,
+    asteroids: Query<&Asteroid>,
     mut writer: EventWriter<'_, Boom>
 ) {
     for event in reader2.read() {
-        for entity in vec![event.collider1, event.collider2] {
-            if let Ok(mut ship) = ships.get_mut(entity) {
-                (*ship).energy-=0.05;
-                if ship.energy <0. {
-                    writer.send(Boom { entity });
+        if asteroids.get(event.collider1).is_ok() && asteroids.get(event.collider2).is_ok() {
+            trace!("Both asteroids!");
+        } else {
+            for entity in vec![event.collider1, event.collider2] {
+                if let Ok(mut ship) = objects.get_mut(entity) {
+                    (*ship).energy-=0.2;
+                    if ship.energy <0. {
+                        writer.send(Boom { entity });
+                    }
                 }
             }
         }
@@ -331,7 +340,7 @@ fn kill_debris(
 const THRUSTER_TIME:f32 = 0.05;
 const THRUSTER_LIFETIME:f32 = 0.5;
 const THRUSTER_SPEED:f32 = 200.;
-const GUN_TIME:f32 = 0.05;
+const GUN_TIME:f32 = 0.2;
 const GUN_LIFETIME:f32 = 0.5;
 const SHOT_SPEED:f32 = 400.;
 const SPACE_SIZE:f32 = 400.;
@@ -380,22 +389,21 @@ fn input_handler(
 
         if let Some(keys) = get_key_config_for(ship.player) {
 
+            gun.time-=time.delta_seconds();
             if keyboard_input.pressed(keys.shoot) {
                 let r = transform.rotation.to_euler(EulerRot::XYZ);
 
                 let rnd = rand::random::<f32>()*0.1-0.05;
                 let v = Vec2::from_angle(rnd + r.2+3.1415/2.);
 
-                gun.time+=time.delta_seconds();
-                if gun.time > GUN_TIME {
-
-                    gun.time -= GUN_TIME;
+                if gun.time < 0. {
+                    gun.time = GUN_TIME;
 
                     commands.spawn((MaterialMesh2dBundle {
                         mesh: mesh_handles.shot.clone().into(),
                         transform: Transform::default()
                             .with_rotation(transform.rotation)
-                            .with_translation(transform.translation),
+                            .with_translation(transform.translation+v.extend(0.)),
                             material: mesh_handles.material.clone(),
                             ..Default::default()
                     },
@@ -406,9 +414,7 @@ fn input_handler(
                     Velocity{linvel:speed.linvel+v* SHOT_SPEED, angvel:0. },
                     Lifetime{ death: time.elapsed_seconds() + GUN_LIFETIME}
                     ));
-
                 }
-
             }
             if keyboard_input.pressed(keys.thrust) {
                 let r = transform.rotation.to_euler(EulerRot::XYZ);
