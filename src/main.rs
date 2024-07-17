@@ -1,3 +1,5 @@
+mod components;
+
 use std::f32::consts::PI;
 use std::ops::Mul;
 
@@ -12,6 +14,7 @@ use bevy::render::{
 };
 use bevy_rapier2d::prelude::*;
 
+use crate::components::*;
 
 const HEAL_SPEED: f32=0.2;
 
@@ -19,11 +22,10 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        //        .add_plugins(RapierDebugRenderPlugin::default())
+                .add_plugins(RapierDebugRenderPlugin::default())
         .add_event::<Boom>()
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
-        .add_systems(Update, move_speeder)
         .add_systems(Update, kill_debris)
         .add_systems(Update, (check_collisions, kill))
         .add_systems(Update, warp_space)
@@ -36,47 +38,6 @@ fn main() {
 #[derive(Event)]
 struct Boom {
     entity: Entity
-}
-
-#[derive(Component)]
-struct Debris;
-
-#[derive(Component)]
-struct EnergyDisplay {
-    ship: Entity
-}
-
-#[derive(Component)]
-struct Asteroid;
-
-#[derive(Component)]
-struct Ship {
-    player: u8
-}
-
-#[derive(Component)]
-struct Shield {
-    energy:f32
-}
-
-#[derive(Component)]
-struct Thruster {
-    thruster_time: f32
-}
-
-#[derive(Component)]
-struct Gun {
-    time: f32
-}
-
-#[derive(Component)]
-struct Speed {
-    speed: Vec2,
-}
-
-#[derive(Component)]
-struct Lifetime {
-    death: f32
 }
 
 fn create_ship() -> Vec<Vec3>  {
@@ -104,6 +65,19 @@ fn create_figter() -> Vec<Vec3>  {
 }
 
 fn create_asteroid() -> Vec<Vec3> {
+    vec![
+        Vec3::new(0.0, 0.8, 0.0), 
+        Vec3::new(0.3, 0.7, 0.0), 
+        Vec3::new(0.3, 0.3, 0.0), 
+        Vec3::new(0.8, -0.1, 0.0), 
+        Vec3::new(0.7, -0.8, 0.0), 
+        Vec3::new(-0.5, -0.9, 0.0), 
+        Vec3::new(-0.5, -0.7, 0.0), 
+        Vec3::new(-0.8, 0.2, 0.0), 
+        Vec3::new(-0.6, 0.7, 0.0), 
+    ]
+}
+fn create_asteroid_old() -> Vec<Vec3> {
     vec![
         Vec3::new(0.0, 0.3, 0.0), 
         Vec3::new(0.3, 0., 0.0), 
@@ -137,8 +111,8 @@ fn create_shield() -> Vec<Vec3> {
     ).collect()
 }
 
-fn create_mesh(lines: Vec<Vec3>, scale:f32) -> Mesh {
-    let lines2:Vec<Vec3> = lines.iter().map(|v|
+fn create_mesh(geometry: fn()->Vec<Vec3>, scale:f32) -> Mesh {
+    let lines:Vec<Vec3> = geometry().iter().map(|v|
         v.mul(scale)
     ).collect();
     let len = lines.len();
@@ -149,7 +123,7 @@ fn create_mesh(lines: Vec<Vec3>, scale:f32) -> Mesh {
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            lines2
+            lines
         )
         .with_inserted_attribute(
             Mesh::ATTRIBUTE_COLOR, vec![[1.0, 1.0, 1.0, 1.0]; len])
@@ -175,12 +149,12 @@ fn setupv3(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let mesh_handles=MeshHandles {
-        ship : meshes.add(create_mesh(create_ship(), 16.)),
-        fighter : meshes.add(create_mesh(create_figter(), 32.)),
-        debris : meshes.add(create_mesh(create_debris(), 16.)),
-        shot : meshes.add(create_mesh(create_shot(), 16.)),
-        asteroid : meshes.add(create_mesh(create_asteroid(), 16.)),
-        shield : meshes.add(create_mesh(create_shield(), 16.)),
+        ship : meshes.add(create_mesh(create_ship, 16.)),
+        fighter : meshes.add(create_mesh(create_figter, 32.)),
+        debris : meshes.add(create_mesh(create_debris, 16.)),
+        shot : meshes.add(create_mesh(create_shot, 16.)),
+        asteroid : meshes.add(create_mesh(create_asteroid, 8.)),
+        shield : meshes.add(create_mesh(create_shield, 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
         shot_material: materials.add(ColorMaterial::from(Color::RED)),
     };
@@ -272,11 +246,11 @@ fn load_shield(
 }
 
 fn arrange_energy_display(
-    ships: Query<(&Transform, &Ship, &Shield), With<Ship>>,
+    ships: Query<(&Transform, &Shield), With<Ship>>,
     mut displays: Query<(&mut Transform, &EnergyDisplay, &mut Text), Without<Ship>>
 ) {
     for (mut transform, display, mut text) in &mut displays {
-        if let Ok((ship_transform,ship, shield)) = ships.get(display.ship) {
+        if let Ok((ship_transform, shield)) = ships.get(display.ship) {
             transform.translation = ship_transform.translation+ Vec3::new(-20., 30., 0.);
             text.sections = vec![TextSection::from(format!("{:0} %",(100.*shield.energy) as i32))];
         }
@@ -298,6 +272,7 @@ fn copy_shield_value(
     }
 }
 
+
 fn spawn_asteroid(
     commands: &mut Commands,
     pos: Vec3,
@@ -305,13 +280,16 @@ fn spawn_asteroid(
     size: f32,
     velocity: Velocity
 ) {
+
+    let vertices:Vec<Vec2> = create_asteroid().iter().map(|v|v.xy()*8.).collect();
+
     commands.spawn((MaterialMesh2dBundle {
         mesh: mesh_handles.asteroid.clone().into(),
         transform: Transform::default().with_translation(pos).with_scale(Vec3::splat(size)),
         material: mesh_handles.material.clone(),
         ..Default::default()
     },
-    Collider::ball(4.0),
+    Collider::convex_hull(vertices.as_slice()).unwrap(),
     ActiveEvents::CONTACT_FORCE_EVENTS,
     RigidBody::Dynamic,
     GravityScale(0.0),
@@ -362,16 +340,6 @@ fn check_collisions(
                 }
             }
         }
-    }
-}
-
-// FIXME: add time
-fn move_speeder(
-    mut query: Query<(&Speed, &mut Transform)>,
-    time: Res<Time>,
-) {
-    for (speed, mut transform) in &mut query {
-        transform.translation+=speed.speed.extend(0.) * time.delta_seconds();
     }
 }
 
