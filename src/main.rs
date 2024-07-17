@@ -22,12 +22,12 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-                .add_plugins(RapierDebugRenderPlugin::default())
+//                .add_plugins(RapierDebugRenderPlugin::default())
         .add_event::<Boom>()
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
         .add_systems(Update, kill_debris)
-        .add_systems(Update, (check_collisions, kill))
+        .add_systems(Update, (apply_gravity, check_collisions, kill))
         .add_systems(Update, warp_space)
         .add_systems(Update, load_shield)
         .add_systems(Update, copy_shield_value)
@@ -141,6 +141,7 @@ struct MeshHandles {
     shield: Handle<Mesh>,
     material: Handle<ColorMaterial>,
     shot_material: Handle<ColorMaterial>,
+    debris_material: Handle<ColorMaterial>,
 }
 
 fn setupv3(
@@ -157,6 +158,7 @@ fn setupv3(
         shield : meshes.add(create_mesh(create_shield, 16.)),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
         shot_material: materials.add(ColorMaterial::from(Color::RED)),
+        debris_material: materials.add(ColorMaterial::from(Color::GRAY)),
     };
 
     commands.spawn(Camera2dBundle::default());
@@ -172,6 +174,8 @@ fn setupv3(
         ActiveEvents::CONTACT_FORCE_EVENTS,
         RigidBody::Dynamic,
         GravityScale(0.0),
+        ReadMassProperties::default(),
+        ExternalForce::default(),
         Velocity{ linvel:Vec2::new(0.0,0.0), angvel:0.0},
         ExternalImpulse{ impulse:Vec2::new(0., 0.), torque_impulse: 0. },
         Restitution::coefficient(0.7),
@@ -195,7 +199,7 @@ fn setupv3(
 
     }
 
-    for _ in 1..12 {
+    for _ in 0..4 {
         let pos = Vec3::new(
             rand::random::<f32>()*100.-50.,
             rand::random::<f32>()*100.-50.,
@@ -247,10 +251,14 @@ fn load_shield(
 
 fn arrange_energy_display(
     ships: Query<(&Transform, &Shield), With<Ship>>,
-    mut displays: Query<(&mut Transform, &EnergyDisplay, &mut Text), Without<Ship>>
+    mut displays: Query<(Entity, &mut Transform, &EnergyDisplay, &mut Text), Without<Ship>>,
+    mut commands: Commands,
 ) {
-    for (mut transform, display, mut text) in &mut displays {
+    for (display_entity, mut transform, display, mut text) in &mut displays {
         if let Ok((ship_transform, shield)) = ships.get(display.ship) {
+            if shield.energy<0. {
+                commands.entity(display_entity).despawn();
+            }
             transform.translation = ship_transform.translation+ Vec3::new(-20., 30., 0.);
             text.sections = vec![TextSection::from(format!("{:0} %",(100.*shield.energy) as i32))];
         }
@@ -272,6 +280,23 @@ fn copy_shield_value(
     }
 }
 
+const GRAVITY_SCALE:f32 = 0.3;
+
+fn apply_gravity(
+    all_masses: Query<(Entity, &Transform, &ReadMassProperties)>,
+    mut forced_masses: Query<(Entity, &Transform, &ReadMassProperties, &mut ExternalForce)>,
+) {
+    for (forced_entity, forced_pos, forced_mass, mut force) in &mut forced_masses {
+        let mut force_sum = Vec3::ZERO;
+        for (other_entity, other_pos, other_mass) in &all_masses {
+            if forced_entity != other_entity {
+                let direction = other_pos.translation-forced_pos.translation;
+                force_sum += GRAVITY_SCALE*direction*(forced_mass.mass*other_mass.mass)/direction.length_squared();
+            }
+        }
+        force.force= force_sum.xy();
+    }
+}
 
 fn spawn_asteroid(
     commands: &mut Commands,
@@ -292,6 +317,8 @@ fn spawn_asteroid(
     Collider::convex_hull(vertices.as_slice()).unwrap(),
     ActiveEvents::CONTACT_FORCE_EVENTS,
     RigidBody::Dynamic,
+    ReadMassProperties::default(),
+    ExternalForce::default(),
     GravityScale(0.0),
     Sleeping::disabled(),
     Velocity{ linvel:velocity.linvel, angvel:0.0},
@@ -304,8 +331,10 @@ fn spawn_asteroid(
 
 fn kill(mut reader: EventReader<Boom>,
     asteroids: Query<(&Transform, &Velocity), With<Asteroid>>,
+    positions: Query<(&Transform, &Velocity)>,
     mut commands: Commands,
-    mesh_handles: Res<MeshHandles>
+    mesh_handles: Res<MeshHandles>,
+    time: Res<Time>,
 ) {
     for event in reader.read() {
         if let Ok((asteroid_transform, velocity)) = asteroids.get(event.entity) {
@@ -317,6 +346,12 @@ fn kill(mut reader: EventReader<Boom>,
         }
         if let Some(mut e) = commands.get_entity(event.entity) {
             e.despawn();
+        }
+        if let Ok((pos, speed)) = positions.get(event.entity) {    
+            for _ in 0..4 {
+                let v = Vec2::from_angle(rand::random::<f32>()*3.1415*2.);
+                spawn_debris(&mut commands, &mesh_handles, pos.translation, speed.linvel+ v * DEBRIS_SPEED, &time);
+            }
         }
     }
 }
@@ -375,6 +410,7 @@ fn kill_debris(
 const THRUSTER_TIME:f32 = 0.05;
 const THRUSTER_LIFETIME:f32 = 0.5;
 const THRUSTER_SPEED:f32 = 200.;
+const DEBRIS_SPEED:f32 = 50.;
 const GUN_TIME:f32 = 0.2;
 const GUN_LIFETIME:f32 = 1.0;
 const SHOT_SPEED:f32 = 400.;
@@ -461,22 +497,9 @@ fn input_handler(
                 // speed_up
                 thruster.thruster_time+=time.delta_seconds();
                 if thruster.thruster_time > THRUSTER_TIME {
-
                     thruster.thruster_time -= THRUSTER_TIME;
 
-                    commands.spawn((MaterialMesh2dBundle {
-                        mesh: mesh_handles.debris.clone().into(),
-                        transform: Transform::default()
-                            .with_translation(transform.translation),
-                            material: mesh_handles.material.clone(),
-                            ..Default::default()
-                    },
-                    Debris{},
-                    RigidBody::Dynamic,
-                    Velocity{linvel:speed.linvel-v* THRUSTER_SPEED, angvel:0. },
-                    Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
-                    ));
-
+                    spawn_debris(&mut commands, &mesh_handles, transform.translation, speed.linvel-v* THRUSTER_SPEED, &time);
                 }
 
             }
@@ -494,5 +517,20 @@ fn input_handler(
     if keyboard_input.pressed(KeyCode::KeyQ) {
         app_exit_events.send(bevy::app::AppExit);
     }
+}
+
+fn spawn_debris(commands: &mut Commands, mesh_handles: &Res<MeshHandles>, pos: Vec3, speed: Vec2, time: &Res<Time>) {
+    commands.spawn((MaterialMesh2dBundle {
+        mesh: mesh_handles.debris.clone().into(),
+        transform: Transform::default()
+            .with_translation(pos),
+            material: mesh_handles.debris_material.clone(),
+            ..Default::default()
+    },
+    Debris{},
+    RigidBody::Dynamic,
+    Velocity{ linvel: speed, angvel:0. },
+    Lifetime{ death: time.elapsed_seconds() + THRUSTER_LIFETIME }
+    ));
 }
 
