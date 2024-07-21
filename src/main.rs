@@ -20,7 +20,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        //                .add_plugins(RapierDebugRenderPlugin::default())
+                        .add_plugins(RapierDebugRenderPlugin::default())
         .add_event::<Boom>()
         .add_systems(Startup, setupv3)
         .add_systems(Update, input_handler)
@@ -68,8 +68,9 @@ fn create_asteroid() -> Vec<Vec3> {
         Vec3::new(0.3, 0.3, 0.0),
         Vec3::new(0.8, -0.1, 0.0),
         Vec3::new(0.7, -0.8, 0.0),
+        Vec3::new(0.1, -0.9, 0.0),
         Vec3::new(-0.5, -0.9, 0.0),
-        Vec3::new(-0.5, -0.7, 0.0),
+        Vec3::new(-0.7, -0.7, 0.0),
         Vec3::new(-0.8, 0.2, 0.0),
         Vec3::new(-0.6, 0.7, 0.0),
     ]
@@ -193,7 +194,7 @@ fn setupv3(
         shot: meshes.add(create_mesh(create_shot, 16.)),
         asteroid: meshes.add(create_mesh(create_asteroid, 8.)),
         shield: meshes.add(create_mesh(create_shield, 16.)),
-        moon: meshes.add(create_mesh(create_moon, 16.)),
+        moon: meshes.add(create_mesh(create_moon, 1.)),
 
         material: materials.add(ColorMaterial::from(Color::BLUE)),
         shot_material: materials.add(ColorMaterial::from(Color::RED)),
@@ -236,6 +237,14 @@ fn setupv3(
             });
     }
 
+    spawn_moon(
+        &mut commands,
+        Vec3::ZERO, 
+        Velocity { linvel: Vec2::ZERO, angvel: 0. , },
+        &mesh_handles,
+        32.
+    );
+
     for _ in 0..4 {
         let pos = Vec3::new(
             rand::random::<f32>() * 100. - 50.,
@@ -254,6 +263,29 @@ fn setupv3(
         );
     }
     commands.insert_resource(mesh_handles);
+}
+
+fn spawn_moon(commands: &mut Commands, pos: Vec3, velocity: Velocity, mesh_handles: &MeshHandles, size: f32) {
+    commands.spawn((
+        MaterialMesh2dBundle {
+            mesh: mesh_handles.moon.clone().into(),
+            transform: Transform::default()
+                .with_translation(pos)
+                .with_scale(Vec3::splat(size)),
+            material: mesh_handles.material.clone(),
+            ..Default::default()
+        },
+        Celestial {
+            velocity,
+            ..Default::default()
+        },
+        Collider::ball(1.),
+        ColliderMassProperties::Density(6.0),
+        //ReadMassProperties { 
+        //},
+        Shield { energy: 10000. },
+        Moon {},
+    ));
 }
 
 fn spawn_asteroid(
@@ -481,6 +513,7 @@ struct KeyConfig {
     left: KeyCode,
     right: KeyCode,
     shoot: KeyCode,
+    teleport: KeyCode,
     player: u8,
 }
 
@@ -492,6 +525,7 @@ fn steering_config() -> Vec<KeyConfig> {
             left: KeyCode::ArrowLeft,
             right: KeyCode::ArrowRight,
             shoot: KeyCode::Space,
+            teleport: KeyCode::KeyT,
         },
         KeyConfig {
             player: 1,
@@ -499,6 +533,7 @@ fn steering_config() -> Vec<KeyConfig> {
             left: KeyCode::KeyA,
             right: KeyCode::KeyD,
             shoot: KeyCode::KeyS,
+            teleport: KeyCode::Escape,
         },
     ]
 }
